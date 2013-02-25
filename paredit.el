@@ -297,7 +297,7 @@ Paredit behaves badly if parentheses are unbalanced, so exercise
                 ("; [Bar.|"
                  "; [Bar.]|"))
 
-   ("\""        paredit-doublequote
+   ("\""        paredit-anyquote
                 ("(frob grovel |full lexical)"
                  "(frob grovel \"|\" full lexical)"
                  "(frob grovel \"\"| full lexical)")
@@ -305,7 +305,7 @@ Paredit behaves badly if parentheses are unbalanced, so exercise
                  "(foo \"bar \\\"|baz\" quux)")
                 ("(frob grovel)   ; full |lexical"
                  "(frob grovel)   ; full \"|lexical"))
-   ("M-\""      paredit-meta-doublequote
+   ("M-\""      paredit-meta-anyquote
                 ("(foo \"bar |baz\" quux)"
                  "(foo \"bar baz\"\n     |quux)")
                 ("(foo |(bar #\\x \"baz \\\\ quux\") zot)"
@@ -888,32 +888,37 @@ Each predicate should examine only text before the point, if ENDP is
           (let ((show-paren-mode nil))
             (blink-matching-open))))))
 
-(defun paredit-doublequote (&optional n)
-  "Insert a pair of double-quotes.
-With a prefix argument N, wrap the following N S-expressions in
-  double-quotes, escaping intermediate characters if necessary.
-If the region is active, `transient-mark-mode' is enabled, and the
-  region's start and end fall in the same parenthesis depth, insert a
-  pair of double-quotes around the region, again escaping intermediate
-  characters if necessary.
-Inside a comment, insert a literal double-quote.
-At the end of a string, move past the closing double-quote.
-In the middle of a string, insert a backslash-escaped double-quote.
-If in a character literal, do nothing.  This prevents accidentally
-  changing a what was in the character literal to become a meaningful
-  delimiter unintentionally."
+(defun paredit-anyquote (&optional n)
+  "Insert a pair of quotes. The style of quote depends on which
+key this is bound to; if this was bound to '\"' then double
+quotes are used, etc. With a prefix argument N, wrap the
+following N S-expressions in quotes, escaping intermediate
+characters if necessary.  If the region is active,
+`transient-mark-mode' is enabled, and the region's start and end
+fall in the same parenthesis depth, insert a pair of
+double-quotes around the region, again escaping intermediate
+characters if necessary.  Inside a comment, insert a literal
+double-quote.  At the end of a string, move past the closing
+double-quote.  In the middle of a string, insert a
+backslash-escaped double-quote.  If in a character literal, do
+nothing.  This prevents accidentally changing a what was in the
+character literal to become a meaningful delimiter
+unintentionally."
   (interactive "P")
-  (cond ((paredit-in-string-p)
-         (if (eq (cdr (paredit-string-start+end-points))
-                 (point))
-             (forward-char)             ; We're on the closing quote.
-             (insert ?\\ ?\" )))
-        ((paredit-in-comment-p)
-         (insert ?\" ))
-        ((not (paredit-in-char-p))
-         (paredit-insert-pair n ?\" ?\" 'paredit-forward-for-quote))))
+  (let ((pt (point))
+        (state (paredit-current-parse-state))
+        (char (progn (self-insert-command 1) (char-before (point)))))
+    (cond ((paredit-in-comment-p state) nil)
+          ((paredit-in-string-p state)
+           (if (= char (char-after (nth 8 state)))
+               (if (eq (cdr (paredit-string-start+end-points state)) pt)
+                   (delete-char 1)             ; We're on the closing quote.
+                 (backward-char) (insert ?\\ char ) (forward-char 2))))
+          ((not (paredit-in-char-p (- 1 (point))))
+           (delete-char -1)
+           (paredit-insert-pair n char char 'paredit-forward-for-quote)))))
 
-(defun paredit-meta-doublequote (&optional n)
+(defun paredit-meta-anyquote (&optional n)
   "Move to the end of the string, insert a newline, and indent.
 If not in a string, act as `paredit-doublequote'; if no prefix argument
   is specified and the region is not active or `transient-mark-mode' is
@@ -921,7 +926,7 @@ If not in a string, act as `paredit-doublequote'; if no prefix argument
   zero."
   (interactive "P")
   (if (not (paredit-in-string-p))
-      (paredit-doublequote (or n
+      (paredit-anyquote (or n
                                (and (not (paredit-region-active-p))
                                     1)))
     (let ((start+end (paredit-string-start+end-points)))
