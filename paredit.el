@@ -732,24 +732,25 @@ If such a comment exists, delete the comment (including all leading
          (end
           (and regionp
                (not n)
-               (prog1 (region-end) (goto-char (region-beginning))))))
+               (prog1 (region-end) (goto-char (region-beginning)))))
+         ;;this may be used by the "forward" function
+         (paredit-saved-parse-state (paredit-current-parse-state)))
     (let ((spacep (paredit-space-for-delimiter-p nil open)))
-      (if spacep (insert " "))
+      (if spacep (prog1 (insert " ")
+                   (setq paredit-saved-parse-state
+                         (parse-partial-sexp (1- (point)) (point) nil nil
+                                             paredit-saved-parse-state))))
       (insert open)
+      (setq paredit-saved-parse-state
+            (parse-partial-sexp (1- (point)) (point) nil nil
+                                paredit-saved-parse-state))
       (save-excursion
         ;; Move past the desired region.
-        (cond (n
-               (funcall forward
-                        (paredit-scan-sexps-hack (point)
-                                                 (prefix-numeric-value n))))
-              (regionp
-               (funcall forward (+ end (if spacep 2 1)))))
-        ;; The string case can happen if we are inserting string
-        ;; delimiters.  The comment case may happen by moving to the
-        ;; end of a buffer that has a comment with no trailing newline.
-        (if (and (not (paredit-in-string-p))
-                 (paredit-in-comment-p))
-            (newline))
+        (cond (n (funcall forward
+                          (save-excursion
+                            (forward-sexp (prefix-numeric-value n))
+                            (point))))
+              (regionp (funcall forward (+ end (if spacep 2 1)))))
         (insert close)
         (if (paredit-space-for-delimiter-p t close)
             (insert " "))))))
@@ -936,35 +937,37 @@ If not in a string, act as `paredit-doublequote'; if no prefix argument
       (paredit-ignore-sexp-errors (indent-sexp)))))
 
 (defun paredit-forward-for-quote (end)
-  (let ((state (paredit-current-parse-state)))
-    (while (< (point) end)
-      (let ((new-state (parse-partial-sexp (point) (1+ (point))
-                                           nil nil state)))
-        (if (paredit-in-string-p new-state)
-            (if (not (paredit-in-string-escape-p))
-                (setq state new-state)
-              ;; Escape character: turn it into an escaped escape
-              ;; character by appending another backslash.
-              (insert ?\\ )
-              ;; Now the point is after both escapes, and we want to
-              ;; rescan from before the first one to after the second
-              ;; one.
-              (setq state
-                    (parse-partial-sexp (- (point) 2) (point)
-                                        nil nil state))
-              ;; Advance the end point, since we just inserted a new
-              ;; character.
-              (setq end (1+ end)))
-          ;; String: escape by inserting a backslash before the quote.
-          (backward-char)
-          (insert ?\\ )
-          ;; The point is now between the escape and the quote, and we
-          ;; want to rescan from before the escape to after the quote.
-          (setq state
-                (parse-partial-sexp (1- (point)) (1+ (point))
-                                    nil nil state))
-          ;; Advance the end point for the same reason as above.
-          (setq end (1+ end)))))))
+                                        ;Caller may optionally pass in the parse state.
+    (let ((state (cond ((boundp 'paredit-saved-parse-state) paredit-saved-parse-state)
+                       ((paredit-current-parse-state)))))
+      (while (< (point) end)
+        (let ((new-state (parse-partial-sexp (point) (1+ (point))
+                                             nil nil state)))
+          (if (paredit-in-string-p new-state)
+              (if (not (paredit-in-string-escape-p))
+                  (setq state new-state)
+                ;; Escape character: turn it into an escaped escape
+                ;; character by appending another backslash.
+                (insert ?\\ )
+                ;; Now the point is after both escapes, and we want to
+                ;; rescan from before the first one to after the second
+                ;; one.
+                (setq state
+                      (parse-partial-sexp (- (point) 2) (point)
+                                          nil nil state))
+                ;; Advance the end point, since we just inserted a new
+                ;; character.
+                (setq end (1+ end)))
+            ;; String: escape by inserting a backslash before the quote.
+            (backward-char)
+            (insert ?\\ )
+            ;; The point is now between the escape and the quote, and we
+            ;; want to rescan from before the escape to after the quote.
+            (setq state
+                  (parse-partial-sexp (1- (point)) (1+ (point))
+                                      nil nil state))
+            ;; Advance the end point for the same reason as above.
+            (setq end (1+ end)))))))
 
 ;;;; Escape Insertion
 
