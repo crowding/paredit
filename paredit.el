@@ -316,7 +316,7 @@ Paredit behaves badly if parentheses are unbalanced, so exercise
                  "(string #\\x|)")
                 ("\"foo|bar\"\n  ; Character to escape: \""
                  "\"foo\\\"|bar\""))
-   (";"         paredit-semicolon
+   (";"         paredit-comment-char
                 ("|(frob grovel)"
                  ";|(frob grovel)")
                 ("(frob |grovel)"
@@ -1045,32 +1045,31 @@ If the point is in a string or a comment, fill the paragraph instead,
 
 ;;;; Comment Insertion
 
-(defun paredit-semicolon (&optional n)
-  "Insert a semicolon.
-With a prefix argument N, insert N semicolons.
+(defun paredit-comment-char (&optional n)
+  "Insert the typed character, which should indicate a beginning of comment.
+With a prefix argument N, insert N of them.
 If in a string, do just that and nothing else.
 If in a character literal, move to the beginning of the character
-  literal before inserting the semicolon.
+  literal before inserting the .
 If the enclosing list ends on the line after the point, break the line
   after the last S-expression following the point.
 If a list begins on the line after the point but ends on a different
   line, break the line after the last S-expression following the point
   before the list."
-  (interactive "p")
+ (interactive "p")
   (if (or (paredit-in-string-p) (paredit-in-comment-p))
-      (insert (make-string (or n 1) ?\; ))
+      (self-insert-command (or n 1))
     (if (paredit-in-char-p)
         (backward-char 2))
-    (let ((line-break-point (paredit-semicolon-find-line-break-point)))
+    (let ((line-break-point (paredit-comment-find-line-break-point)))
       (if line-break-point
-          (paredit-semicolon-with-line-break line-break-point (or n 1))
-          (insert (make-string (or n 1) ?\; ))))))
+          (paredit-comment-with-line-break line-break-point (or n 1))
+        (self-insert-command (or n 1))))))
 
-(defun paredit-semicolon-find-line-break-point ()
+(defun paredit-comment-find-line-break-point ()
   (let ((line-break-point nil)
         (eol (point-at-eol)))
-    (and (not (eolp))                   ;Implies (not (eobp)).
-         (save-excursion
+    (and (save-excursion
            (paredit-handle-sexp-errors
                (progn
                  (while
@@ -1080,22 +1079,19 @@ If a list begins on the line after the point but ends on a different
                        (and (eq eol (point-at-eol))
                             (not (eobp)))))
                  (backward-sexp)
-                 (and (eq eol (point-at-eol))
-                      ;; Don't break the line if the end of the last
-                      ;; S-expression is at the end of the buffer.
-                      (progn (forward-sexp) (not (eobp)))))
+                 (eq eol (point-at-eol)))
              ;; If we hit the end of an expression, but the closing
              ;; delimiter is on another line, don't break the line.
              (save-excursion
                (paredit-skip-whitespace t (point-at-eol))
-               (not (or (eolp) (eq (char-after) ?\; ))))))
+               (not (or (eolp) (save-excursion (forward-char) (paredit-in-comment-p)))))))
          line-break-point)))
 
-(defun paredit-semicolon-with-line-break (line-break-point n)
+(defun paredit-comment-with-line-break (line-break-point n)
   (let ((line-break-marker (make-marker)))
     (set-marker line-break-marker line-break-point)
     (set-marker-insertion-type line-break-marker t)
-    (insert (make-string (or n 1) ?\; ))
+    (self-insert-command (or n 1))
     (save-excursion
       (goto-char line-break-marker)
       (set-marker line-break-marker nil)
